@@ -92,6 +92,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "scanblocks", 3, "stop_height" },
     { "scanblocks", 5, "options" },
     { "scanblocks", 5, "filter_false_positives" },
+    { "getdescriptoractivity", 0, "blockhashes" },
+    { "getdescriptoractivity", 1, "scanobjects" },
     { "scantxoutset", 1, "scanobjects" },
     { "addmultisigaddress", 0, "nrequired" },
     { "addmultisigaddress", 1, "keys" },
