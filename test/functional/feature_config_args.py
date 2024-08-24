@@ -153,6 +153,12 @@ class ConfArgsTest(BitcoinTestFramework):
             expected_msg='Error: Error parsing command line arguments: Can not set -proxy with no value. Please specify value with -proxy=value.',
             extra_args=['-proxy'],
         )
+        # Provide a non-boolean-convertible arg to a negated option
+        if self.is_wallet_compiled():
+            self.nodes[0].assert_start_raises_init_error(
+                expected_msg="Error: Invalid value detected for '-wallet' or '-nowallet'. '-wallet' requires a string value, while '-nowallet' accepts only '1' to disable all wallets",
+                extra_args=['-nowallet=not_a_boolean'],
+            )
 
     def test_log_buffer(self):
         self.stop_node(0)
