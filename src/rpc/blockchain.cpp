@@ -1644,6 +1644,7 @@ static RPCHelpMan reconsiderblock()
         }
 
         chainman.ActiveChainstate().ResetBlockFailureFlags(pblockindex);
+        chainman.RecalculateBestHeader();
     }
 
     BlockValidationState state;

@@ -2045,7 +2045,12 @@ void Chainstate::InvalidChainFound(CBlockIndex* pindexNew)
         m_chainman.m_best_invalid = pindexNew;
     }
     if (m_chainman.m_best_header != nullptr && m_chainman.m_best_header->GetAncestor(pindexNew->nHeight) == pindexNew) {
-        m_chainman.m_best_header = m_chain.Tip();
+        CBlockIndex* index_walk{m_chainman.m_best_header};
+        while (index_walk != pindexNew) {
+            index_walk->nStatus |= BLOCK_FAILED_CHILD;
+            index_walk = index_walk->pprev;
+        }
+        m_chainman.RecalculateBestHeader();
     }
 
     LogPrintf("%s: invalid block=%s  height=%d  log2_work=%f  date=%s\n", __func__,
@@ -6393,6 +6398,20 @@ std::optional<int> ChainstateManager::GetSnapshotBaseHeight() const
 {
     const CBlockIndex* base = this->GetSnapshotBaseBlock();
     return base ? std::make_optional(base->nHeight) : std::nullopt;
+}
+
+void ChainstateManager::RecalculateBestHeader()
+{
+    AssertLockHeld(cs_main);
+    // If, due to invalidation / reconsideration of blocks, the previous
+    // best header is no longer valid or guaranteed to be the most-work
+    // header in our block-index not known to be invalid, recalculate it.
+    m_best_header = ActiveChain().Tip();
+    for (auto& entry : m_blockman.m_block_index) {
+        if (!(entry.second.nStatus & BLOCK_FAILED_MASK) && m_best_header->nChainWork < entry.second.nChainWork) {
+            m_best_header = &entry.second;
+        }
+    }
 }
 
 bool ChainstateManager::ValidatedSnapshotCleanup()
