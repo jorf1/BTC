@@ -55,15 +55,24 @@ BOOST_AUTO_TEST_CASE(block_subsidy_test)
 
 BOOST_AUTO_TEST_CASE(subsidy_limit_test)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
-    CAmount nSum = 0;
-    for (int nHeight = 0; nHeight < 14000000; nHeight += 1000) {
-        CAmount nSubsidy = GetBlockSubsidy(nHeight, chainParams->GetConsensus());
-        BOOST_CHECK(nSubsidy <= 50 * COIN);
-        nSum += nSubsidy * 1000;
-        BOOST_CHECK(MoneyRange(nSum));
+    auto main_consensus{CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus()};
+
+    CAmount total_subsidy_sats{0};
+    int block_height{0};
+    while (auto subsidy{GetBlockSubsidy(block_height, main_consensus)}) {
+        total_subsidy_sats += subsidy;
+        block_height++;
+        BOOST_CHECK(subsidy <= 50 * COIN);
+        BOOST_CHECK(MoneyRange(total_subsidy_sats));
     }
-    BOOST_CHECK_EQUAL(nSum, CAmount{2099999997690000});
+    // Verify total subsidy and final block height to test Bitcoin's monetary finality.
+    BOOST_CHECK_EQUAL(total_subsidy_sats, CAmount{2'099'999'997'690'000});
+    BOOST_CHECK_EQUAL(block_height, 6'930'000);
+
+    // Ensure subsidy remains zero.
+    for (; block_height < 14'000'000; block_height += 1000) {
+        BOOST_CHECK_EQUAL(GetBlockSubsidy(block_height, main_consensus), CAmount{0});
+    }
 }
 
 BOOST_AUTO_TEST_CASE(signet_parse_tests)
