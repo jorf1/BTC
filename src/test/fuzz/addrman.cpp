@@ -236,7 +236,7 @@ FUZZ_TARGET(addrman, .init = initialize_addrman)
         }
     }
     AddrManDeterministic& addr_man = *addr_man_ptr;
-    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
+    LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 100) {
         CallOneOf(
             fuzzed_data_provider,
             [&] {
@@ -247,7 +247,8 @@ FUZZ_TARGET(addrman, .init = initialize_addrman)
             },
             [&] {
                 std::vector<CAddress> addresses;
-                LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 10000) {
+                // Maximum number of addresses permitted in an ADDR message (MAX_ADDR_TO_SEND).
+                LIMITED_WHILE(fuzzed_data_provider.ConsumeBool(), 1000) {
                     addresses.push_back(ConsumeAddress(fuzzed_data_provider));
                 }
                 addr_man.Add(addresses, ConsumeNetAddr(fuzzed_data_provider), std::chrono::seconds{ConsumeTime(fuzzed_data_provider, 0, 100000000)});
