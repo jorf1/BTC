@@ -5,26 +5,54 @@
 #ifndef BITCOIN_INTERFACES_MINING_H
 #define BITCOIN_INTERFACES_MINING_H
 
+#include <consensus/amount.h>
+#include <interfaces/types.h>
+#include <primitives/transaction.h>
 #include <node/types.h>
 #include <uint256.h>
+#include <util/time.h>
 
 #include <memory>
 #include <optional>
 
 namespace node {
-struct CBlockTemplate;
 struct NodeContext;
 } // namespace node
 
 class BlockValidationState;
 class CBlock;
+class CBlockHeader;
 class CScript;
 
 namespace interfaces {
 
+//! Block template interface
+class BlockTemplate
+{
+public:
+    virtual ~BlockTemplate() = default;
+
+    virtual CBlockHeader getBlockHeader() = 0;
+    virtual CBlock getBlock() = 0;
+
+    virtual std::vector<CAmount> getTxFees() = 0;
+    virtual std::vector<int64_t> getTxSigops() = 0;
+
+    virtual CTransactionRef getCoinbaseTx() = 0;
+    virtual std::vector<unsigned char> getCoinbaseCommitment() = 0;
+    virtual int getWitnessCommitmentIndex() = 0;
+    virtual std::vector<uint256> getCoinbaseMerklePath() = 0;
+
+    /**
+     * Construct and broadcast the block.
+     *
+     * @returns if the block was processed, independent of block validity
+     */
+    virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CMutableTransaction coinbase) = 0;
+};
+
 //! Interface giving clients (RPC, Stratum v2 Template Provider in the future)
 //! ability to create block templates.
-
 class Mining
 {
 public:
@@ -36,8 +64,31 @@ public:
     //! Returns whether IBD is still in progress.
     virtual bool isInitialBlockDownload() = 0;
 
-    //! Returns the hash for the tip of this chain
-    virtual std::optional<uint256> getTipHash() = 0;
+    //! Returns the hash and height for the tip of this chain
+    virtual std::optional<BlockRef> getTip() = 0;
+
+    /**
+     * Waits for the tip to change
+     *
+     * @param[in] current_tip the current tip, in case of a race condition
+     * @param[in] timeout how long to wait for a new tip
+     * @returns hash and height for the new tip or the previous tip if
+     *          interrupted or after the timeout
+     */
+    virtual BlockRef waitTipChanged(uint256 current_tip, MillisecondsDouble timeout = MillisecondsDouble::max()) = 0;
+
+    /**
+     * Waits for fees in the next block to rise, a new tip or the timeout.
+     *
+     * @param[in] timeout how long to wait for a fee increase
+     * @param[in] tip block hash that the most recent template builds on
+     * @param[in] fee_delta currently ignored: how much total fees in the next block should rise.
+     * @param[in,out] fees_before currently ignored: fees for the most recent template
+     * @param[out] tip_changed whether a new tip arrived during the wait
+     *
+     * @returns true if fees increased, false if a new tip arrives or the timeout occurs
+     */
+    virtual bool waitFeesChanged(MillisecondsDouble timeout, uint256 tip, CAmount fee_delta, CAmount& fees_before, bool& tip_changed) = 0;
 
    /**
      * Construct a new block template
@@ -46,7 +97,7 @@ public:
      * @param[in] options options for creating the block
      * @returns a block template
      */
-    virtual std::unique_ptr<node::CBlockTemplate> createNewBlock(const CScript& script_pub_key, const node::BlockCreateOptions& options={}) = 0;
+    virtual std::unique_ptr<BlockTemplate> createNewBlock(const CScript& script_pub_key, const node::BlockCreateOptions& options={}) = 0;
 
     /**
      * Processes new block. A valid new block is automatically relayed to peers.
