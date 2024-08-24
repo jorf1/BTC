@@ -5,8 +5,10 @@
 #ifndef BITCOIN_INTERFACES_MINING_H
 #define BITCOIN_INTERFACES_MINING_H
 
+#include <interfaces/types.h>
 #include <node/types.h>
 #include <uint256.h>
+#include <util/time.h>
 
 #include <memory>
 #include <optional>
@@ -36,8 +38,18 @@ public:
     //! Returns whether IBD is still in progress.
     virtual bool isInitialBlockDownload() = 0;
 
-    //! Returns the hash for the tip of this chain
-    virtual std::optional<uint256> getTipHash() = 0;
+    //! Returns the hash and height for the tip of this chain
+    virtual std::optional<BlockRef> getTip() = 0;
+
+    /**
+     * Waits for the tip to change
+     *
+     * @param[in] current_tip the current tip, in case of a race condition
+     * @param[in] timeout how long to wait for a new tip
+     * @returns hash and height for the new tip or the previous tip if
+     *          interrupted or after the timeout
+     */
+    virtual BlockRef waitTipChanged(uint256 current_tip, MillisecondsDouble timeout = MillisecondsDouble::max()) = 0;
 
    /**
      * Construct a new block template
