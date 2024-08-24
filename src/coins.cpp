@@ -49,10 +49,8 @@ CCoinsMap::iterator CCoinsViewCache::FetchCoin(const COutPoint &outpoint) const 
             cacheCoins.erase(ret);
             return cacheCoins.end();
         }
-        if (ret->second.coin.IsSpent()) {
-            // The parent only has an empty entry for this outpoint; we can consider our version as fresh.
-            ret->second.AddFlags(CCoinsCacheEntry::FRESH, *ret, m_sentinel);
-        }
+        // GetCoin will never return true if the coin is spent
+        Assume(!ret->second.coin.IsSpent());
         cachedCoinsUsage += ret->second.coin.DynamicMemoryUsage();
     }
     return ret;
@@ -184,34 +182,33 @@ void CCoinsViewCache::SetBestBlock(const uint256 &hashBlockIn) {
 
 bool CCoinsViewCache::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlockIn) {
     for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
-        // Ignore non-dirty entries (optimization).
         if (!it->second.IsDirty()) {
-            continue;
+            throw std::logic_error("A non-DIRTY coin was returned from the cursor in BatchWrite");
+        }
+        if (it->second.IsFresh() && it->second.coin.IsSpent()) {
+            throw std::logic_error("A FRESH coin was not removed when it was spent");
         }
         CCoinsMap::iterator itUs = cacheCoins.find(it->first);
         if (itUs == cacheCoins.end()) {
             // The parent cache does not have an entry, while the child cache does.
-            // We can ignore it if it's both spent and FRESH in the child
-            if (!(it->second.IsFresh() && it->second.coin.IsSpent())) {
-                // Create the coin in the parent cache, move the data up
-                // and mark it as dirty.
-                itUs = cacheCoins.try_emplace(it->first).first;
-                CCoinsCacheEntry& entry{itUs->second};
-                if (cursor.WillErase(*it)) {
-                    // Since this entry will be erased,
-                    // we can move the coin into us instead of copying it
-                    entry.coin = std::move(it->second.coin);
-                } else {
-                    entry.coin = it->second.coin;
-                }
-                cachedCoinsUsage += entry.coin.DynamicMemoryUsage();
-                entry.AddFlags(CCoinsCacheEntry::DIRTY, *itUs, m_sentinel);
-                // We can mark it FRESH in the parent if it was FRESH in the child
-                // Otherwise it might have just been flushed from the parent's cache
-                // and already exist in the grandparent
-                if (it->second.IsFresh()) {
-                    entry.AddFlags(CCoinsCacheEntry::FRESH, *itUs, m_sentinel);
-                }
+            // Create the coin in the parent cache, move the data up
+            // and mark it as dirty.
+            itUs = cacheCoins.try_emplace(it->first).first;
+            CCoinsCacheEntry& entry{itUs->second};
+            if (cursor.WillErase(*it)) {
+                // Since this entry will be erased,
+                // we can move the coin into us instead of copying it
+                entry.coin = std::move(it->second.coin);
+            } else {
+                entry.coin = it->second.coin;
+            }
+            cachedCoinsUsage += entry.coin.DynamicMemoryUsage();
+            entry.AddFlags(CCoinsCacheEntry::DIRTY, *itUs, m_sentinel);
+            // We can mark it FRESH in the parent if it was FRESH in the child
+            // Otherwise it might have just been flushed from the parent's cache
+            // and already exist in the grandparent
+            if (it->second.IsFresh()) {
+                entry.AddFlags(CCoinsCacheEntry::FRESH, *itUs, m_sentinel);
             }
         } else {
             // Found the entry in the parent cache
@@ -278,7 +275,7 @@ bool CCoinsViewCache::Sync()
 void CCoinsViewCache::Uncache(const COutPoint& hash)
 {
     CCoinsMap::iterator it = cacheCoins.find(hash);
-    if (it != cacheCoins.end() && !it->second.IsDirty() && !it->second.IsFresh()) {
+    if (it != cacheCoins.end() && !it->second.IsDirty()) {
         cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
         TRACE5(utxocache, uncache,
                hash.hash.data(),
@@ -325,14 +322,14 @@ void CCoinsViewCache::SanityCheck() const
         if (entry.IsDirty()) attr |= 1;
         if (entry.IsFresh()) attr |= 2;
         if (entry.coin.IsSpent()) attr |= 4;
-        // Only 5 combinations are possible.
-        assert(attr != 2 && attr != 4 && attr != 7);
+        // Only 4 combinations are possible.
+        assert(attr != 2 && attr != 4 && attr != 6 && attr != 7);
 
         // Recompute cachedCoinsUsage.
         recomputed_usage += entry.coin.DynamicMemoryUsage();
 
         // Count the number of entries we expect in the linked list.
-        if (entry.IsDirty() || entry.IsFresh()) ++count_flagged;
+        if (entry.IsDirty()) ++count_flagged;
     }
     // Iterate over the linked list of flagged entries.
     size_t count_linked = 0;
@@ -341,7 +338,7 @@ void CCoinsViewCache::SanityCheck() const
         assert(it->second.Next()->second.Prev() == it);
         assert(it->second.Prev()->second.Next() == it);
         // Verify they are actually flagged.
-        assert(it->second.IsDirty() || it->second.IsFresh());
+        assert(it->second.IsDirty());
         // Count the number of entries actually in the list.
         ++count_linked;
     }
