@@ -75,6 +75,9 @@ static GlobalMutex cs_blockchange;
 static std::condition_variable cond_blockchange;
 static CUpdatedBlock latestblock GUARDED_BY(cs_blockchange);
 
+static GlobalMutex cs_relevant_blocks;
+static UniValue g_relevant_blocks GUARDED_BY(cs_relevant_blocks);
+
 /* Calculate the difficulty for a given block index.
  */
 double GetDifficulty(const CBlockIndex& blockindex)
@@ -2403,6 +2406,9 @@ static RPCHelpMan scanblocks()
             RPCResult{"when action=='status' and a scan is currently in progress", RPCResult::Type::OBJ, "", "", {
                     {RPCResult::Type::NUM, "progress", "Approximate percent complete"},
                     {RPCResult::Type::NUM, "current_height", "Height of the block currently being scanned"},
+                    {RPCResult::Type::ARR, "relevant_blocks", "Blocks that may have matched a scanobject.", {
+                        {RPCResult::Type::STR_HEX, "blockhash", "A relevant blockhash"},
+                    }},
                 },
             },
             scan_result_abort,
@@ -2426,6 +2432,8 @@ static RPCHelpMan scanblocks()
         }
         ret.pushKV("progress", g_scanfilter_progress.load());
         ret.pushKV("current_height", g_scanfilter_progress_height.load());
+        LOCK(cs_relevant_blocks);
+        ret.pushKV("relevant_blocks", g_relevant_blocks);
         return ret;
     } else if (request.params[0].get_str() == "abort") {
         BlockFiltersScanReserver reserver;
@@ -2492,7 +2500,11 @@ static RPCHelpMan scanblocks()
                 needle_set.emplace(script.begin(), script.end());
             }
         }
-        UniValue blocks(UniValue::VARR);
+
+        {
+            LOCK(cs_relevant_blocks);
+            g_relevant_blocks = UniValue(UniValue::VARR);
+        }
         const int amount_per_chunk = 10000;
         std::vector<BlockFilter> filters;
         int start_block_height = start_index->nHeight; // for progress reporting
@@ -2530,7 +2542,8 @@ static RPCHelpMan scanblocks()
                             }
                         }
 
-                        blocks.push_back(filter.GetBlockHash().GetHex());
+                        LOCK(cs_relevant_blocks);
+                        g_relevant_blocks.push_back(filter.GetBlockHash().GetHex());
                     }
                 }
             }
@@ -2550,7 +2563,8 @@ static RPCHelpMan scanblocks()
 
         ret.pushKV("from_height", start_block_height);
         ret.pushKV("to_height", start_index->nHeight); // start_index is always the last scanned block here
-        ret.pushKV("relevant_blocks", std::move(blocks));
+        LOCK(cs_relevant_blocks);
+        ret.pushKV("relevant_blocks", g_relevant_blocks);
         ret.pushKV("completed", completed);
     }
     else {
