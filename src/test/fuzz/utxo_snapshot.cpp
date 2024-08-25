@@ -72,7 +72,7 @@ void utxo_snapshot_fuzz(FuzzBufferType buffer)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     auto& setup{*g_setup};
-    bool dirty_chainman{false}; // Re-use the global chainman, but reset it when it is dirty
+    bool dirty_chainman{false}; // Reuse the global chainman, but reset it when it is dirty
     auto& chainman{*setup.m_node.chainman};
 
     const auto snapshot_path = gArgs.GetDataDirNet() / "fuzzed_snapshot.dat";
